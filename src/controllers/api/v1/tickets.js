@@ -454,32 +454,90 @@ apiTickets.create = function (req, res) {
           ticket.owner = req.user._id
         }
 
-        ticket.subject = sanitizeHtml(ticket.subject).trim()
+        // Allow users to create tickets for any group
+        if (!_.isUndefined(postData.group)) {
+          // Validate that the group exists
+          var GroupSchema = require('../../../models/group')
+          GroupSchema.findOne({ _id: postData.group }, function (err, group) {
+            if (err || !group) {
+              return done({ status: 400, error: 'Invalid group specified' })
+            }
+            ticket.group = postData.group
+            
+            // Check if group has only one member for automatic assignment
+            if (group.members && group.members.length === 1) {
+              ticket.assignee = group.members[0]
+            }
+            
+            ticket.subject = sanitizeHtml(ticket.subject).trim()
 
-        var marked = require('marked')
-        var tIssue = ticket.issue
-        tIssue = tIssue.replace(/(\r\n|\n\r|\r|\n)/g, '<br>')
-        tIssue = sanitizeHtml(tIssue).trim()
-        ticket.issue = xss(marked.parse(tIssue))
-        ticket.history = [HistoryItem]
-        ticket.subscribers = [user._id]
+            var marked = require('marked')
+            var tIssue = ticket.issue
+            tIssue = tIssue.replace(/(\r\n|\n\r|\r|\n)/g, '<br>')
+            tIssue = sanitizeHtml(tIssue).trim()
+            ticket.issue = xss(marked.parse(tIssue))
+            ticket.history = [HistoryItem]
+            ticket.subscribers = [user._id]
 
-        ticket.save(function (err, t) {
-          if (err) return done({ status: 400, error: err })
+            ticket.save(function (err, t) {
+              if (err) return done({ status: 400, error: err })
 
-          t.populate('group owner priority', function (err, tt) {
-            if (err) return done({ status: 400, error: err })
+              t.populate('group owner priority assignee', function (err, tt) {
+                if (err) return done({ status: 400, error: err })
 
-            emitter.emit('ticket:created', {
-              hostname: req.headers.host,
-              socketId: socketId,
-              ticket: tt
+                emitter.emit('ticket:created', {
+                  hostname: req.headers.host,
+                  socketId: socketId,
+                  ticket: tt
+                })
+
+                response.ticket = tt
+                res.json(response)
+              })
             })
-
-            response.ticket = tt
-            res.json(response)
           })
-        })
+        } else {
+          // If no group specified, use default group (first available)
+          var GroupSchema = require('../../../models/group')
+          GroupSchema.findOne({}, function (err, defaultGroup) {
+            if (err || !defaultGroup) {
+              return done({ status: 400, error: 'No groups available' })
+            }
+            ticket.group = defaultGroup._id
+            
+            // Check if group has only one member for automatic assignment
+            if (defaultGroup.members && defaultGroup.members.length === 1) {
+              ticket.assignee = defaultGroup.members[0]
+            }
+            
+            ticket.subject = sanitizeHtml(ticket.subject).trim()
+
+            var marked = require('marked')
+            var tIssue = ticket.issue
+            tIssue = tIssue.replace(/(\r\n|\n\r|\r|\n)/g, '<br>')
+            tIssue = sanitizeHtml(tIssue).trim()
+            ticket.issue = xss(marked.parse(tIssue))
+            ticket.history = [HistoryItem]
+            ticket.subscribers = [user._id]
+
+            ticket.save(function (err, t) {
+              if (err) return done({ status: 400, error: err })
+
+              t.populate('group owner priority assignee', function (err, tt) {
+                if (err) return done({ status: 400, error: err })
+
+                emitter.emit('ticket:created', {
+                  hostname: req.headers.host,
+                  socketId: socketId,
+                  ticket: tt
+                })
+
+                response.ticket = tt
+                res.json(response)
+              })
+            })
+          })
+        }
       }
     ],
     function (err) {
@@ -723,6 +781,9 @@ apiTickets.single = function (req, res) {
   if (_.isUndefined(uid)) return res.status(200).json({ success: false, error: 'Invalid Ticket' })
 
   var ticketModel = require('../../../models/ticket')
+  var moment = require('moment')
+  var winston = require('../../../logger')
+  
   ticketModel.getTicketByUid(uid, function (err, ticket) {
     if (err) return res.send(err)
 
@@ -730,12 +791,101 @@ apiTickets.single = function (req, res) {
       return res.status(200).json({ success: false, error: 'Invalid Ticket' })
     }
 
-    ticket = _.clone(ticket._doc)
-    if (!permissions.canThis(req.user.role, 'tickets:notes')) {
-      delete ticket.notes
+    // Check overdue status and update if needed
+    const now = moment()
+    const lastUpdate = ticket.updated ? moment(ticket.updated) : moment(ticket.date)
+    const hoursSinceUpdate = now.diff(lastUpdate, 'hours')
+    
+    let needsUpdate = false
+    let updateData = {}
+    
+    // Check for recent assignee activity in the last 48 hours
+    let hasRecentAssigneeActivity = false
+    if (ticket.assignee && ticket.history && ticket.history.length > 0) {
+      // Check if assignee has any action in history in last 48 hours
+      const recentAssigneeAction = ticket.history.find(historyItem => {
+        if (historyItem.owner && historyItem.owner.toString() === ticket.assignee._id.toString()) {
+          const actionTime = moment(historyItem.date)
+          const hoursSinceAction = now.diff(actionTime, 'hours')
+          return hoursSinceAction < 48
+        }
+        return false
+      })
+      
+      hasRecentAssigneeActivity = !!recentAssigneeAction
+      winston.debug(`Ticket ${ticket.uid} has recent assignee activity: ${hasRecentAssigneeActivity}`)
+    } else {
+      // Fallback: If no history, check if ticket was updated recently (might be from comments)
+      if (ticket.updated) {
+        const hoursSinceUpdate = now.diff(moment(ticket.updated), 'hours')
+        if (hoursSinceUpdate < 48) {
+          hasRecentAssigneeActivity = true
+          winston.debug(`Ticket ${ticket.uid} - Using fallback: updated ${hoursSinceUpdate} hours ago, considering as recent activity`)
+        }
+      }
     }
-
-    return res.json({ success: true, ticket: ticket })
+    
+    // If there's recent assignee activity, set overdue and escalate to false
+    if (hasRecentAssigneeActivity) {
+      if (ticket.overdue) {
+        updateData.overdue = false
+        needsUpdate = true
+        winston.debug(`Ticket ${ticket.uid} overdue set to false due to recent assignee activity`)
+      }
+      if (ticket.escalate_to_admin) {
+        updateData.escalate_to_admin = false
+        needsUpdate = true
+        winston.debug(`Ticket ${ticket.uid} escalation set to false due to recent assignee activity`)
+      }
+    } else {
+      // Check for 48-hour overdue (only if no recent assignee activity)
+      if (hoursSinceUpdate >= 48 && !ticket.overdue) {
+        updateData.overdue = true
+        needsUpdate = true
+        winston.debug(`Ticket ${ticket.uid} marked as overdue (${hoursSinceUpdate} hours since update)`)
+      }
+      
+      // Check for 96-hour escalation (only if no recent assignee activity)
+      if (hoursSinceUpdate >= 96 && !ticket.escalate_to_admin) {
+        updateData.escalate_to_admin = true
+        needsUpdate = true
+        winston.debug(`Ticket ${ticket.uid} escalated to admin (${hoursSinceUpdate} hours since update)`)
+      }
+    }
+    
+    // Update ticket if needed
+    if (needsUpdate) {
+      ticketModel.findByIdAndUpdate(
+        ticket._id,
+        { $set: updateData },
+        { new: true },
+        function (err, updatedTicket) {
+          if (err) {
+            winston.error(`Error updating ticket ${ticket.uid}: ${err.message}`)
+            // Continue with original ticket if update fails
+            ticket = _.clone(ticket._doc)
+            if (!permissions.canThis(req.user.role, 'tickets:notes')) {
+              delete ticket.notes
+            }
+            return res.json({ success: true, ticket: ticket })
+          }
+          
+          // Use updated ticket
+          ticket = _.clone(updatedTicket._doc)
+          if (!permissions.canThis(req.user.role, 'tickets:notes')) {
+            delete ticket.notes
+          }
+          return res.json({ success: true, ticket: ticket })
+        }
+      )
+    } else {
+      // No update needed, return original ticket
+      ticket = _.clone(ticket._doc)
+      if (!permissions.canThis(req.user.role, 'tickets:notes')) {
+        delete ticket.notes
+      }
+      return res.json({ success: true, ticket: ticket })
+    }
   })
 }
 

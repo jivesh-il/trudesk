@@ -85,26 +85,15 @@ accountsApi.create = async function (req, res) {
 
     const userPopulated = await user.populate('role')
 
+    // Note: Group assignment is not supported during user creation
+    // Users should be assigned to groups after creation via the update API
     let groups = []
-    if (postData.groups) {
-      groups = await Group.getGroups(postData.groups)
-      for (const group of groups) {
-        await group.addMember(savedId)
-        await group.save()
-      }
-    }
 
+    // Note: Team assignment is not supported during user creation
+    // Users should be assigned to teams after creation via the update API
     let teams = []
-    if (postData.teams) {
-      const dbTeams = await Team.getTeamsByIds(postData.teams)
-      for (const team of dbTeams) {
-        await team.addMember(savedId)
-        await team.save()
-      }
 
-      teams = dbTeams
-    }
-
+    // Note: Department assignment is handled automatically
     const departments = await Department.getUserDepartments(savedId)
     user = userPopulated.toJSON()
     user.groups = groups.map(g => {

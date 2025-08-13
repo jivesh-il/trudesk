@@ -500,7 +500,7 @@ userSchema.statics.createUser = function (data, callback) {
 }
 
 /**
- * Creates a user with only Email address. Emails user password.
+ * Creates a user with only Email address. No email verification required.
  *
  * @param email
  * @param callback
@@ -552,61 +552,8 @@ userSchema.statics.createUserFromEmail = function (email, callback) {
         group.save(function (err, group) {
           if (err) return callback(err)
 
-          // Send welcome email
-          var path = require('path')
-          var mailer = require('../mailer')
-          var Email = require('email-templates')
-          var templateDir = path.resolve(__dirname, '..', 'mailer', 'templates')
-
-          var email = new Email({
-            views: {
-              root: templateDir,
-              options: {
-                extension: 'handlebars'
-              }
-            }
-          })
-
-          var settingSchema = require('./setting')
-          settingSchema.getSetting('gen:siteurl', function (err, setting) {
-            if (err) return callback(err)
-
-            if (!setting) {
-              setting = { value: '' }
-            }
-
-            var dataObject = {
-              user: savedUser,
-              username: savedUser.username,
-              fullname: savedUser.fullname,
-              plainTextPassword: plainTextPass,
-              baseUrl: setting.value
-            }
-
-            email
-              .render('public-account-created', dataObject)
-              .then(function (html) {
-                var mailOptions = {
-                  to: savedUser.email,
-                  subject: 'Welcome to trudesk! - Here are your account details.',
-                  html: html,
-                  generateTextFromHTML: true
-                }
-
-                mailer.sendMail(mailOptions, function (err) {
-                  if (err) {
-                    winston.warn(err)
-                    return callback(err)
-                  }
-
-                  return callback(null, { user: savedUser, group: group })
-                })
-              })
-              .catch(function (err) {
-                winston.warn(err)
-                return callback(err)
-              })
-          })
+          // Return user and group without sending email
+          return callback(null, { user: savedUser, group: group })
         })
       })
     })

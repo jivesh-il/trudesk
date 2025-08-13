@@ -171,6 +171,35 @@ middleware.checkOrigin = function (req, res, next) {
 
 // API
 middleware.api = function (req, res, next) {
+  // Check for internal service authentication first
+  const internalServiceKey = req.headers['x-internal-service-key']
+  if (internalServiceKey && internalServiceKey === process.env.INTERNAL_SERVICE_KEY) {
+    // Check if a specific user ID is requested
+    const requestedUserId = req.headers['x-user-id']
+    if (requestedUserId) {
+      const User = require('../models/user')
+      User.findOne({ _id: requestedUserId }, function (err, user) {
+        if (err || !user) {
+          return res.status(401).json({ error: 'Requested user not found' })
+        }
+        req.user = user
+        return next()
+      })
+      return
+    }
+    
+    // Set a default admin user for internal service calls
+    const User = require('../models/user')
+    User.findOne({ username: 'jiveshil' }, function (err, user) {
+      if (err || !user) {
+        return res.status(401).json({ error: 'Internal service authentication failed' })
+      }
+      req.user = user
+      return next()
+    })
+    return
+  }
+
   var accessToken = req.headers.accesstoken
 
   var userSchema = require('../models/user')
@@ -195,9 +224,36 @@ middleware.api = function (req, res, next) {
 middleware.hasAuth = middleware.api
 
 middleware.apiv2 = function (req, res, next) {
-  // ByPass auth for now if user is set through session
-  if (req.user) return next()
+  // Check for internal service authentication FIRST (prioritize over cookies/sessions)
+  const internalServiceKey = req.headers['x-internal-service-key']
+  if (internalServiceKey && internalServiceKey === process.env.INTERNAL_SERVICE_KEY) {
+    // Handle user switching via x-user-id header
+    const requestedUserId = req.headers['x-user-id']
+    if (requestedUserId) {
+      const User = require('../models/user')
+      User.findOne({ _id: requestedUserId }, function (err, user) {
+        if (err || !user) {
+          return res.status(401).json({ success: false, error: 'Requested user not found' })
+        }
+        req.user = user
+        return next()
+      })
+      return
+    }
+    
+    // Default to admin user if no specific user requested
+    const User = require('../models/user')
+    User.findOne({ username: 'jiveshil' }, function (err, user) {
+      if (err || !user) {
+        return res.status(401).json({ success: false, error: 'Internal service authentication failed' })
+      }
+      req.user = user
+      return next()
+    })
+    return
+  }
 
+  // Only fall back to JWT/cookie auth if internal service key is not provided
   var passport = require('passport')
   passport.authenticate('jwt', { session: true }, function (err, user) {
     if (err || !user) return res.status(401).json({ success: false, error: 'Invalid Authentication Token' })
@@ -205,7 +261,6 @@ middleware.apiv2 = function (req, res, next) {
       req.user = user
       return next()
     }
-
     return res.status(500).json({ success: false, error: 'Unknown Error Occurred' })
   })(req, res, next)
 }

@@ -113,7 +113,8 @@ const ticketSchema = mongoose.Schema({
   notes: [noteSchema],
   attachments: [attachmentSchema],
   history: [historySchema],
-  subscribers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'accounts' }]
+  subscribers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'accounts' }],
+  file: { type: String } // Custom field for storing file URLs
 })
 
 ticketSchema.index({ deleted: -1, group: 1, status: 1 })
