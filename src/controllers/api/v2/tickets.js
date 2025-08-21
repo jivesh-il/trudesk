@@ -90,11 +90,12 @@ ticketsV2.create = async function (req, res) {
       owner: req.user._id,
       group: selectedGroup._id,
       assignee: assignee,
-      type: defaultType._id,
+      type: postTicket.type || defaultType._id, // Allow custom type or use default
       status: defaultStatus._id,
       priority: defaultType.priorities && defaultType.priorities.length > 0 ? defaultType.priorities[0] : null,
       subject: postTicket.subject,
       issue: postTicket.issue,
+      description: postTicket.description, // Add the description field
       file: postTicket.file, // Add the file field
       history: [{
         action: 'ticket:created',
@@ -224,6 +225,43 @@ ticketsV2.get = async (req, res) => {
         index === self.findIndex(t => t._id.toString() === ticket._id.toString())
       )
 
+      // Add overdue and escalate_to_admin fields to each ticket
+      const moment = require('moment')
+      const processedTickets = uniqueTickets.map(ticket => {
+        const now = moment()
+        const lastUpdate = ticket.updated ? moment(ticket.updated) : moment(ticket.date)
+        const hoursSinceUpdate = now.diff(lastUpdate, 'hours')
+        
+        // Check for recent assignee activity in the last 48 hours
+        let hasRecentAssigneeActivity = false
+        if (ticket.assignee && ticket.history && ticket.history.length > 0) {
+          const recentAssigneeAction = ticket.history.find(historyItem => {
+            if (historyItem.owner && historyItem.owner.toString() === ticket.assignee._id.toString()) {
+              const actionTime = moment(historyItem.date)
+              const hoursSinceAction = now.diff(actionTime, 'hours')
+              return hoursSinceAction < 48
+            }
+            return false
+          })
+          hasRecentAssigneeActivity = !!recentAssigneeAction
+        }
+        
+        // Set overdue and escalate_to_admin based on activity
+        let overdue = false
+        let escalate_to_admin = false
+        
+        if (!hasRecentAssigneeActivity) {
+          overdue = hoursSinceUpdate >= 48
+          escalate_to_admin = hoursSinceUpdate >= 96
+        }
+        
+        return {
+          ...ticket.toObject(),
+          overdue,
+          escalate_to_admin
+        }
+      })
+
       // Get total count
       const userOwnedCount = await Models.Ticket.countDocuments({
         $or: [
@@ -241,13 +279,13 @@ ticketsV2.get = async (req, res) => {
       const hasPrevPage = page > 0
 
       return apiUtils.sendApiSuccess(res, {
-        tickets: uniqueTickets,
+        tickets: processedTickets,
         pagination: {
           currentPage: page,
           totalPages: totalPages,
           totalCount: totalCount,
           limit: limit,
-          count: uniqueTickets.length,
+          count: processedTickets.length,
           hasNextPage: hasNextPage,
           hasPrevPage: hasPrevPage,
           nextPage: hasNextPage ? page + 1 : null,
@@ -259,18 +297,55 @@ ticketsV2.get = async (req, res) => {
     const tickets = await Models.Ticket.getTicketsWithObject(mappedGroups, queryObject)
     const totalCount = await Models.Ticket.getCountWithObject(mappedGroups, queryObject)
 
+    // Add overdue and escalate_to_admin fields to each ticket
+    const moment = require('moment')
+    const processedTickets = tickets.map(ticket => {
+      const now = moment()
+      const lastUpdate = ticket.updated ? moment(ticket.updated) : moment(ticket.date)
+      const hoursSinceUpdate = now.diff(lastUpdate, 'hours')
+      
+      // Check for recent assignee activity in the last 48 hours
+      let hasRecentAssigneeActivity = false
+      if (ticket.assignee && ticket.history && ticket.history.length > 0) {
+        const recentAssigneeAction = ticket.history.find(historyItem => {
+          if (historyItem.owner && historyItem.owner.toString() === ticket.assignee._id.toString()) {
+            const actionTime = moment(historyItem.date)
+            const hoursSinceAction = now.diff(actionTime, 'hours')
+            return hoursSinceAction < 48
+          }
+          return false
+        })
+        hasRecentAssigneeActivity = !!recentAssigneeAction
+      }
+      
+      // Set overdue and escalate_to_admin based on activity
+      let overdue = false
+      let escalate_to_admin = false
+      
+      if (!hasRecentAssigneeActivity) {
+        overdue = hoursSinceUpdate >= 48
+        escalate_to_admin = hoursSinceUpdate >= 96
+      }
+      
+      return {
+        ...ticket.toObject(),
+        overdue,
+        escalate_to_admin
+      }
+    })
+
     const totalPages = Math.ceil(totalCount / limit)
     const hasNextPage = page < totalPages - 1
     const hasPrevPage = page > 0
 
     return apiUtils.sendApiSuccess(res, {
-      tickets,
+      tickets: processedTickets,
       pagination: {
         currentPage: page,
         totalPages: totalPages,
         totalCount: totalCount,
         limit: limit,
-        count: tickets.length,
+        count: processedTickets.length,
         hasNextPage: hasNextPage,
         hasPrevPage: hasPrevPage,
         nextPage: hasNextPage ? page + 1 : null,
@@ -322,14 +397,51 @@ ticketsV2.getOwned = async (req, res) => {
     const hasNextPage = page < totalPages - 1
     const hasPrevPage = page > 0
 
+    // Add overdue and escalate_to_admin fields to each ticket
+    const moment = require('moment')
+    const processedTickets = ownedTickets.map(ticket => {
+      const now = moment()
+      const lastUpdate = ticket.updated ? moment(ticket.updated) : moment(ticket.date)
+      const hoursSinceUpdate = now.diff(lastUpdate, 'hours')
+      
+      // Check for recent assignee activity in the last 48 hours
+      let hasRecentAssigneeActivity = false
+      if (ticket.assignee && ticket.history && ticket.history.length > 0) {
+        const recentAssigneeAction = ticket.history.find(historyItem => {
+          if (historyItem.owner && historyItem.owner.toString() === ticket.assignee._id.toString()) {
+            const actionTime = moment(historyItem.date)
+            const hoursSinceAction = now.diff(actionTime, 'hours')
+            return hoursSinceAction < 48
+          }
+          return false
+        })
+        hasRecentAssigneeActivity = !!recentAssigneeAction
+      }
+      
+      // Set overdue and escalate_to_admin based on activity
+      let overdue = false
+      let escalate_to_admin = false
+      
+      if (!hasRecentAssigneeActivity) {
+        overdue = hoursSinceUpdate >= 48
+        escalate_to_admin = hoursSinceUpdate >= 96
+      }
+      
+      return {
+        ...ticket.toObject(),
+        overdue,
+        escalate_to_admin
+      }
+    })
+
     return apiUtils.sendApiSuccess(res, {
-      tickets: ownedTickets,
+      tickets: processedTickets,
       pagination: {
         currentPage: page,
         totalPages: totalPages,
         totalCount: totalCount,
         limit: limit,
-        count: ownedTickets.length,
+        count: processedTickets.length,
         hasNextPage: hasNextPage,
         hasPrevPage: hasPrevPage,
         nextPage: hasNextPage ? page + 1 : null,
@@ -381,14 +493,51 @@ ticketsV2.getAssigned = async (req, res) => {
     const hasNextPage = page < totalPages - 1
     const hasPrevPage = page > 0
 
+    // Add overdue and escalate_to_admin fields to each ticket
+    const moment = require('moment')
+    const processedTickets = assignedTickets.map(ticket => {
+      const now = moment()
+      const lastUpdate = ticket.updated ? moment(ticket.updated) : moment(ticket.date)
+      const hoursSinceUpdate = now.diff(lastUpdate, 'hours')
+      
+      // Check for recent assignee activity in the last 48 hours
+      let hasRecentAssigneeActivity = false
+      if (ticket.assignee && ticket.history && ticket.history.length > 0) {
+        const recentAssigneeAction = ticket.history.find(historyItem => {
+          if (historyItem.owner && historyItem.owner.toString() === ticket.assignee._id.toString()) {
+            const actionTime = moment(historyItem.date)
+            const hoursSinceAction = now.diff(actionTime, 'hours')
+            return hoursSinceAction < 48
+          }
+          return false
+        })
+        hasRecentAssigneeActivity = !!recentAssigneeAction
+      }
+      
+      // Set overdue and escalate_to_admin based on activity
+      let overdue = false
+      let escalate_to_admin = false
+      
+      if (!hasRecentAssigneeActivity) {
+        overdue = hoursSinceUpdate >= 48
+        escalate_to_admin = hoursSinceUpdate >= 96
+      }
+      
+      return {
+        ...ticket.toObject(),
+        overdue,
+        escalate_to_admin
+      }
+    })
+
     return apiUtils.sendApiSuccess(res, {
-      tickets: assignedTickets,
+      tickets: processedTickets,
       pagination: {
         currentPage: page,
         totalPages: totalPages,
         totalCount: totalCount,
         limit: limit,
-        count: assignedTickets.length,
+        count: processedTickets.length,
         hasNextPage: hasNextPage,
         hasPrevPage: hasPrevPage,
         nextPage: hasNextPage ? page + 1 : null,
@@ -487,6 +636,32 @@ ticketsV2.single = async function (req, res) {
     
     // Function to send response with ticket
     const sendResponse = (ticketToSend) => {
+      // Minimal response-time cleanup for comments/notes HTML wrappers
+      const cleaned = ticketToSend.toObject ? ticketToSend.toObject() : ticketToSend
+      if (cleaned && Array.isArray(cleaned.comments)) {
+        cleaned.comments = cleaned.comments.map(function (c) {
+          if (c && typeof c.comment === 'string') {
+            c.comment = c.comment
+              .replace(/<br\s*\/?\>/gi, ' ')
+              .replace(/<\/?p>/gi, '')
+              .replace(/\n/g, '')
+              .trim()
+          }
+          return c
+        })
+      }
+      if (cleaned && Array.isArray(cleaned.notes)) {
+        cleaned.notes = cleaned.notes.map(function (n) {
+          if (n && typeof n.note === 'string') {
+            n.note = n.note
+              .replace(/<br\s*\/?\>/gi, ' ')
+              .replace(/<\/?p>/gi, '')
+              .replace(/\n/g, '')
+              .trim()
+          }
+          return n
+        })
+      }
       if (req.user.role.isAdmin || req.user.role.isAgent) {
         Models.Department.getDepartmentGroupsOfUser(req.user._id, function (err, dbGroups) {
           if (err) return apiUtils.sendApiError(res, 500, err)
@@ -495,8 +670,8 @@ ticketsV2.single = async function (req, res) {
             return g._id.toString()
           })
 
-          if (groups.includes(ticketToSend.group._id.toString())) {
-            return apiUtils.sendApiSuccess(res, { ticket: ticketToSend })
+          if (groups.includes(cleaned.group._id.toString())) {
+            return apiUtils.sendApiSuccess(res, { ticket: cleaned })
           } else {
             return apiUtils.sendApiError(res, 403, 'Forbidden')
           }
@@ -509,8 +684,8 @@ ticketsV2.single = async function (req, res) {
             return g._id.toString()
           })
 
-          if (groupIds.includes(ticketToSend.group._id.toString())) {
-            return apiUtils.sendApiSuccess(res, { ticket: ticketToSend })
+          if (groupIds.includes(cleaned.group._id.toString())) {
+            return apiUtils.sendApiSuccess(res, { ticket: cleaned })
           } else {
             return apiUtils.sendApiError(res, 403, 'Forbidden')
           }
@@ -547,11 +722,57 @@ ticketsV2.update = function (req, res) {
   const putTicket = req.body.ticket
   if (!uid || !putTicket) return apiUtils.sendApiError(res, 400, 'Invalid Parameters')
 
-  // todo: complete this...
-  Models.Ticket.getTicketByUid(uid, function (err, ticket) {
+  Models.Ticket.getTicketByUid(uid, async function (err, ticket) {
     if (err) return apiUtils.sendApiError(res, 500, err.message)
+    if (!ticket) return apiUtils.sendApiError(res, 404, 'Ticket not found')
 
-    return apiUtils.sendApiSuccess(res, ticket)
+    try {
+      // Update fields if provided
+      if (putTicket.subject !== undefined) {
+        ticket.subject = putTicket.subject
+      }
+      
+      if (putTicket.issue !== undefined) {
+        ticket.issue = putTicket.issue
+      }
+      
+      if (putTicket.description !== undefined) {
+        ticket.description = putTicket.description
+      }
+      
+      if (putTicket.type !== undefined) {
+        ticket.type = putTicket.type._id || putTicket.type
+      }
+      
+      if (putTicket.status !== undefined) {
+        ticket.status = putTicket.status._id || putTicket.status
+      }
+      
+      if (putTicket.priority !== undefined) {
+        ticket.priority = putTicket.priority._id || putTicket.priority
+      }
+      
+      if (putTicket.assignee !== undefined) {
+        ticket.assignee = putTicket.assignee._id || putTicket.assignee
+      }
+      
+      if (putTicket.group !== undefined) {
+        ticket.group = putTicket.group._id || putTicket.group
+      }
+
+      // Update timestamp
+      ticket.updated = Date.now()
+
+      // Save the updated ticket
+      const updatedTicket = await ticket.save()
+      
+      // Populate related fields
+      await updatedTicket.populate('group owner priority type status assignee')
+
+      return apiUtils.sendApiSuccess(res, updatedTicket)
+    } catch (error) {
+      return apiUtils.sendApiError(res, 500, error.message)
+    }
   })
 }
 

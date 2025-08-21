@@ -380,6 +380,7 @@ apiTickets.search = function (req, res) {
  * {
  *      "subject": "Subject",
  *      "issue": "Issue Exmaple",
+ *      "description": "Optional description of the ticket",
  *      "owner": {OwnerId},
  *      "group": {GroupId},
  *      "type": {TypeId},
@@ -471,6 +472,14 @@ apiTickets.create = function (req, res) {
             
             ticket.subject = sanitizeHtml(ticket.subject).trim()
 
+            // Handle description field if provided
+            if (ticket.description) {
+              var tDescription = ticket.description
+              tDescription = tDescription.replace(/(\r\n|\n\r|\r|\n)/g, '<br>')
+              tDescription = sanitizeHtml(tDescription).trim()
+              ticket.description = xss(marked.parse(tDescription))
+            }
+
             var marked = require('marked')
             var tIssue = ticket.issue
             tIssue = tIssue.replace(/(\r\n|\n\r|\r|\n)/g, '<br>')
@@ -511,6 +520,14 @@ apiTickets.create = function (req, res) {
             }
             
             ticket.subject = sanitizeHtml(ticket.subject).trim()
+
+            // Handle description field if provided
+            if (ticket.description) {
+              var tDescription = ticket.description
+              tDescription = tDescription.replace(/(\r\n|\n\r|\r|\n)/g, '<br>')
+              tDescription = sanitizeHtml(tDescription).trim()
+              ticket.description = xss(marked.parse(tDescription))
+            }
 
             var marked = require('marked')
             var tIssue = ticket.issue
@@ -566,7 +583,8 @@ apiTickets.create = function (req, res) {
  *      "fullname": "Full Name",
  *      "email": "email@email.com",
  *      "subject": "Subject",
- *      "issue": "Issue Exmaple"
+ *      "issue": "Issue Exmaple",
+ *      "description": "Optional description of the ticket"
  * }
  *
  * @apiExample Example usage:
@@ -715,6 +733,7 @@ apiTickets.createPublicTicket = function (req, res) {
           priority: _.first(ticketType.priorities)._id, // TODO: change when priority order is complete!
           subject: xss(sanitizeHtml(postData.ticket.subject).trim()),
           issue: xss(sanitizeHtml(postData.ticket.issue).trim()),
+          description: postData.ticket.description ? xss(sanitizeHtml(postData.ticket.description).trim()) : undefined,
           history: [HistoryItem],
           subscribers: [savedUser._id]
         })
@@ -875,6 +894,31 @@ apiTickets.single = function (req, res) {
           if (!permissions.canThis(req.user.role, 'tickets:notes')) {
             delete ticket.notes
           }
+          // Minimal response-time cleanup for comments/notes HTML wrappers
+          if (ticket && Array.isArray(ticket.comments)) {
+            ticket.comments = ticket.comments.map(function (c) {
+              if (c && typeof c.comment === 'string') {
+                c.comment = c.comment
+                  .replace(/<br\s*\/?\>/gi, ' ')
+                  .replace(/<\/?p>/gi, '')
+                  .replace(/\n/g, '')
+                  .trim()
+              }
+              return c
+            })
+          }
+          if (ticket && Array.isArray(ticket.notes)) {
+            ticket.notes = ticket.notes.map(function (n) {
+              if (n && typeof n.note === 'string') {
+                n.note = n.note
+                  .replace(/<br\s*\/?\>/gi, ' ')
+                  .replace(/<\/?p>/gi, '')
+                  .replace(/\n/g, '')
+                  .trim()
+              }
+              return n
+            })
+          }
           return res.json({ success: true, ticket: ticket })
         }
       )
@@ -883,6 +927,31 @@ apiTickets.single = function (req, res) {
       ticket = _.clone(ticket._doc)
       if (!permissions.canThis(req.user.role, 'tickets:notes')) {
         delete ticket.notes
+      }
+      // Minimal response-time cleanup for comments/notes HTML wrappers
+      if (ticket && Array.isArray(ticket.comments)) {
+        ticket.comments = ticket.comments.map(function (c) {
+          if (c && typeof c.comment === 'string') {
+            c.comment = c.comment
+              .replace(/<br\s*\/?\>/gi, ' ')
+              .replace(/<\/?p>/gi, '')
+              .replace(/\n/g, '')
+              .trim()
+          }
+          return c
+        })
+      }
+      if (ticket && Array.isArray(ticket.notes)) {
+        ticket.notes = ticket.notes.map(function (n) {
+          if (n && typeof n.note === 'string') {
+            n.note = n.note
+              .replace(/<br\s*\/?\>/gi, ' ')
+              .replace(/<\/?p>/gi, '')
+              .replace(/\n/g, '')
+              .trim()
+          }
+          return n
+        })
       }
       return res.json({ success: true, ticket: ticket })
     }
@@ -900,7 +969,7 @@ apiTickets.single = function (req, res) {
  * @apiExample Example usage:
  * curl -H "Content-Type: application/json"
  *      -H "accesstoken: {accesstoken}"
- *      -X PUT -d "{\"status\": {status},\"group\": \"{group}\"}"
+ *      -X PUT -d "{\"status\": {status},\"type\": {type},\"group\": \"{group}\"}"
  *      -l http://localhost/api/v1/tickets/{id}
  *
  * @apiSuccess {boolean} success If the Request was a success
@@ -932,7 +1001,14 @@ apiTickets.update = function (req, res) {
         [
           function (cb) {
             if (!_.isUndefined(reqTicket.status)) {
-              ticket.status = reqTicket.status
+              ticket.status = reqTicket.status._id || reqTicket.status
+            }
+
+            return cb()
+          },
+          function (cb) {
+            if (!_.isUndefined(reqTicket.type)) {
+              ticket.type = reqTicket.type._id || reqTicket.type
             }
 
             return cb()
@@ -983,6 +1059,17 @@ apiTickets.update = function (req, res) {
           function (cb) {
             if (!_.isUndefined(reqTicket.issue) && !_.isNull(reqTicket.issue)) {
               ticket.issue = sanitizeHtml(reqTicket.issue).trim()
+            }
+
+            return cb()
+          },
+          function (cb) {
+            if (!_.isUndefined(reqTicket.description) && !_.isNull(reqTicket.description)) {
+              var marked = require('marked')
+              var tDescription = reqTicket.description
+              tDescription = tDescription.replace(/(\r\n|\n\r|\r|\n)/g, '<br>')
+              tDescription = sanitizeHtml(tDescription).trim()
+              ticket.description = xss(marked.parse(tDescription))
             }
 
             return cb()
@@ -1145,7 +1232,34 @@ apiTickets.postComment = function (req, res) {
 
       emitter.emit('ticket:comment:added', tt, Comment, req.headers.host)
 
-      return res.json({ success: true, error: null, ticket: tt })
+      // Minimal response-time cleanup for comments/notes (do not change stored data)
+      const cleanedTicket = tt.toObject ? tt.toObject() : tt
+      if (cleanedTicket && Array.isArray(cleanedTicket.comments)) {
+        cleanedTicket.comments = cleanedTicket.comments.map(function (c) {
+          if (c && typeof c.comment === 'string') {
+            c.comment = c.comment
+              .replace(/<br\s*\/?\>/gi, ' ')
+              .replace(/<\/?p>/gi, '')
+              .replace(/\n/g, '')
+              .trim()
+          }
+          return c
+        })
+      }
+      if (cleanedTicket && Array.isArray(cleanedTicket.notes)) {
+        cleanedTicket.notes = cleanedTicket.notes.map(function (n) {
+          if (n && typeof n.note === 'string') {
+            n.note = n.note
+              .replace(/<br\s*\/?\>/gi, ' ')
+              .replace(/<\/?p>/gi, '')
+              .replace(/\n/g, '')
+              .trim()
+          }
+          return n
+        })
+      }
+
+      return res.json({ success: true, error: null, ticket: cleanedTicket })
     })
   })
 }
