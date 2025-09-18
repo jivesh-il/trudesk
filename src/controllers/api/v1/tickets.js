@@ -1077,12 +1077,20 @@ apiTickets.update = function (req, res) {
           function (cb) {
             if (!_.isUndefined(reqTicket.assignee) && !_.isNull(reqTicket.assignee)) {
               ticket.assignee = reqTicket.assignee
+              
+              // Handle escalation reason if provided with assignee change
+              if (!_.isUndefined(reqTicket.escalationReason) && !_.isNull(reqTicket.escalationReason)) {
+                ticket.escalationReason = sanitizeHtml(reqTicket.escalationReason).trim()
+                ticket.isEscalated = true // Mark ticket as escalated
+              }
+              
               ticket.populate('assignee', function (err, t) {
                 if (err) return cb(err)
 
                 var HistoryItem = {
                   action: 'ticket:set:assignee',
-                  description: t.assignee.fullname + ' was set as assignee',
+                  description: t.assignee.fullname + ' was set as assignee' + 
+                    (ticket.escalationReason ? ' (Escalation Reason: ' + ticket.escalationReason + ')' : ''),
                   owner: req.user._id
                 }
 
@@ -1093,6 +1101,23 @@ apiTickets.update = function (req, res) {
             } else {
               return cb()
             }
+          },
+          function (cb) {
+            // Handle escalation reason update
+            if (!_.isUndefined(reqTicket.escalationReason) && !_.isNull(reqTicket.escalationReason)) {
+              ticket.escalationReason = sanitizeHtml(reqTicket.escalationReason).trim()
+              ticket.isEscalated = true // Mark ticket as escalated
+              
+              var HistoryItem = {
+                action: 'ticket:set:escalation_reason',
+                description: 'Escalation reason was set: ' + ticket.escalationReason,
+                owner: req.user._id
+              }
+              
+              ticket.history.push(HistoryItem)
+            }
+
+            return cb()
           }
         ],
         function () {

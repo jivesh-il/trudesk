@@ -22,6 +22,88 @@ const ticketStatusSchema = require('../../../models/ticketStatus')
 
 const ticketsV2 = {}
 
+// Get ticket counts by status and escalated tickets
+ticketsV2.getCounts = async (req, res) => {
+  try {
+    const user = req.user
+    
+    // Build base query for tickets the user can access
+    let baseQuery = { deleted: false }
+    
+    // For non-admin/agent users, only show tickets they own or are assigned to
+    if (!permissions.canThis(user.role, 'tickets:viewall', false)) {
+      baseQuery = {
+        ...baseQuery,
+        $or: [
+          { owner: user._id },
+          { assignee: user._id }
+        ]
+      }
+    }
+    
+    // Get all statuses to map them properly
+    const TicketStatus = require('../../../models/ticketStatus')
+    const statuses = await TicketStatus.find({}).lean()
+    const statusMap = {}
+    statuses.forEach(status => {
+      statusMap[status.uid] = status
+    })
+    
+    // Get counts for each status
+    const newCount = await Models.Ticket.countDocuments({
+      ...baseQuery,
+      status: statusMap[0]?._id // New status (uid: 0)
+    })
+    
+    const openCount = await Models.Ticket.countDocuments({
+      ...baseQuery,
+      status: statusMap[1]?._id // Open status (uid: 1)
+    })
+    
+    const pendingCount = await Models.Ticket.countDocuments({
+      ...baseQuery,
+      status: statusMap[2]?._id // Pending status (uid: 2)
+    })
+    
+    const closedCount = await Models.Ticket.countDocuments({
+      ...baseQuery,
+      status: statusMap[3]?._id // Closed status (uid: 3)
+    })
+    
+    // Get count of resolved tickets (any status with isResolved: true)
+    const resolvedStatusIds = statuses
+      .filter(status => status.isResolved)
+      .map(status => status._id)
+    
+    const resolvedCount = await Models.Ticket.countDocuments({
+      ...baseQuery,
+      status: { $in: resolvedStatusIds }
+    })
+    
+    // Get count of escalated tickets
+    const escalatedCount = await Models.Ticket.countDocuments({
+      ...baseQuery,
+      isEscalated: true
+    })
+    
+    return apiUtils.sendApiSuccess(res, {
+      counts: {
+        new: newCount,
+        open: openCount,
+        pending: pendingCount,
+        closed: closedCount,
+        resolved: resolvedCount,
+        escalated: escalatedCount
+      },
+      total: newCount + openCount + pendingCount + closedCount
+    })
+    
+  } catch (err) {
+    logger.warn(err)
+    return apiUtils.sendApiError(res, 500, err.message)
+  }
+}
+
 ticketsV2.create = async function (req, res) {
   const postTicket = req.body
   if (!postTicket) return apiUtils.sendApiError_InvalidPostData(res)
