@@ -49,53 +49,79 @@ ticketsV2.getCounts = async (req, res) => {
       statusMap[status.uid] = status
     })
     
-    // Get counts for each status
-    const newCount = await Models.Ticket.countDocuments({
-      ...baseQuery,
-      status: statusMap[0]?._id // New status (uid: 0)
-    })
-    
-    const openCount = await Models.Ticket.countDocuments({
-      ...baseQuery,
-      status: statusMap[1]?._id // Open status (uid: 1)
-    })
-    
-    const pendingCount = await Models.Ticket.countDocuments({
-      ...baseQuery,
-      status: statusMap[2]?._id // Pending status (uid: 2)
-    })
-    
-    const closedCount = await Models.Ticket.countDocuments({
-      ...baseQuery,
-      status: statusMap[3]?._id // Closed status (uid: 3)
-    })
-    
-    // Get count of resolved tickets (any status with isResolved: true)
-    const resolvedStatusIds = statuses
-      .filter(status => status.isResolved)
-      .map(status => status._id)
-    
-    const resolvedCount = await Models.Ticket.countDocuments({
-      ...baseQuery,
-      status: { $in: resolvedStatusIds }
-    })
-    
-    // Get count of escalated tickets
-    const escalatedCount = await Models.Ticket.countDocuments({
-      ...baseQuery,
-      isEscalated: true
-    })
+  // Priority-based counting system:
+  // Priority: resolved > escalated > closed > pending > new/open
+  
+  // Get all resolved status IDs
+  const resolvedStatusIds = statuses
+    .filter(status => status.isResolved)
+    .map(status => status._id)
+  
+  // Use aggregation pipeline to efficiently count tickets by priority
+  const counts = await Models.Ticket.aggregate([
+    { $match: baseQuery },
+    {
+      $addFields: {
+        // Determine the highest priority category for each ticket
+        category: {
+          $cond: {
+            if: { $in: ['$status', resolvedStatusIds] },
+            then: 'resolved',
+            else: {
+              $cond: {
+                if: { $eq: ['$isEscalated', true] },
+                then: 'escalated',
+                else: {
+                  $cond: {
+                    if: { $eq: ['$status', statusMap[3]?._id] }, // Closed
+                    then: 'closed',
+                    else: {
+                      $cond: {
+                        if: { $eq: ['$status', statusMap[2]?._id] }, // Pending
+                        then: 'pending',
+                        else: 'new_open' // New and Open combined
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      $group: {
+        _id: '$category',
+        count: { $sum: 1 }
+      }
+    }
+  ])
+  
+  // Initialize counts object with default values
+  const ticketCounts = {
+    resolved: 0,
+    escalated: 0,
+    closed: 0,
+    pending: 0,
+    new_open: 0
+  }
+  
+  // Populate counts from aggregation results
+  counts.forEach(item => {
+    ticketCounts[item._id] = item.count
+  })
     
     return apiUtils.sendApiSuccess(res, {
       counts: {
-        new: newCount,
-        open: openCount,
-        pending: pendingCount,
-        closed: closedCount,
-        resolved: resolvedCount,
-        escalated: escalatedCount
+        new: ticketCounts.new_open, // Combined new + open count
+        open: 0, // No separate open count since new === open
+        pending: ticketCounts.pending,
+        closed: ticketCounts.closed,
+        resolved: ticketCounts.resolved,
+        escalated: ticketCounts.escalated
       },
-      total: newCount + openCount + pendingCount + closedCount
+      total: ticketCounts.new_open + ticketCounts.pending + ticketCounts.closed + ticketCounts.resolved + ticketCounts.escalated
     })
     
   } catch (err) {
