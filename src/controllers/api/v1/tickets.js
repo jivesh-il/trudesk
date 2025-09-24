@@ -1226,17 +1226,30 @@ apiTickets.postComment = function (req, res) {
 
     if (_.isUndefined(comment)) return res.status(400).json({ success: false, error: 'Invalid Post Data' })
 
+    // Accept object format: { text: string, image_url: string[] }
+    var text = null
+    var imageUrls = []
+    if (_.isObject(comment)) {
+      if (typeof comment.text === 'string') text = comment.text
+      if (Array.isArray(comment.image_url)) imageUrls = comment.image_url.filter(u => typeof u === 'string')
+    } else if (typeof comment === 'string') {
+      text = comment
+    }
+
     var marked = require('marked')
     marked.setOptions({
       breaks: true
     })
 
-    comment = sanitizeHtml(comment).trim()
+    var sanitizedText = text ? xss(marked.parse(sanitizeHtml(text).trim())) : ''
 
     var Comment = {
       owner: owner,
       date: new Date(),
-      comment: xss(marked.parse(comment))
+      comment: {
+        text: sanitizedText,
+        image_url: imageUrls
+      }
     }
 
     t.updated = Date.now()
@@ -1261,8 +1274,8 @@ apiTickets.postComment = function (req, res) {
       const cleanedTicket = tt.toObject ? tt.toObject() : tt
       if (cleanedTicket && Array.isArray(cleanedTicket.comments)) {
         cleanedTicket.comments = cleanedTicket.comments.map(function (c) {
-          if (c && typeof c.comment === 'string') {
-            c.comment = c.comment
+          if (c && c.comment && typeof c.comment.text === 'string') {
+            c.comment.text = c.comment.text
               .replace(/<br\s*\/?\>/gi, ' ')
               .replace(/<\/?p>/gi, '')
               .replace(/\n/g, '')

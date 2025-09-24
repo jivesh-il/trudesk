@@ -191,8 +191,19 @@ ticketsV2.create = async function (req, res) {
     // Create ticket
     const Ticket = require('../../../models/ticket')
     
-    // Debug: Log the file field
-    console.log('File field from request:', postTicket.file)
+    // Normalize file field to array of strings if provided
+    let normalizedFiles = undefined
+    if (postTicket.file !== undefined && postTicket.file !== null) {
+      if (Array.isArray(postTicket.file)) {
+        normalizedFiles = postTicket.file
+      } else if (typeof postTicket.file === 'string' && postTicket.file.trim() !== '') {
+        normalizedFiles = [postTicket.file]
+      } else if (typeof postTicket.file === 'object') {
+        // If client sent an object (e.g., { url: '...' }), extract values
+        const values = Object.values(postTicket.file).filter(v => typeof v === 'string' && v.trim() !== '')
+        if (values.length > 0) normalizedFiles = values
+      }
+    }
     
     const ticket = new Ticket({
       owner: req.user._id,
@@ -204,7 +215,7 @@ ticketsV2.create = async function (req, res) {
       subject: postTicket.subject,
       issue: postTicket.issue,
       description: postTicket.description, // Add the description field
-      file: postTicket.file, // Add the file field
+      file: normalizedFiles, // Store files as array
       history: [{
         action: 'ticket:created',
         description: 'Ticket was created.',
