@@ -480,6 +480,7 @@ ticketsV2.getOwned = async (req, res) => {
   let isEscalated = null
   let isResolved = null
   let ownerTitle = null
+  let uid = null
 
   try {
     limit = query.limit ? parseInt(query.limit) : limit
@@ -507,6 +508,9 @@ ticketsV2.getOwned = async (req, res) => {
     if (query.ownerTitle !== undefined && query.ownerTitle !== '') {
       ownerTitle = query.ownerTitle.trim()
     }
+    if (query.uid !== undefined && query.uid !== '') {
+      uid = query.uid
+    }
     
     // Validate pagination parameters
     if (limit < 1 || limit > 100) limit = 50
@@ -521,6 +525,11 @@ ticketsV2.getOwned = async (req, res) => {
     const queryObject = {
       owner: req.user._id,
       deleted: false
+    }
+    
+    // Add UID filter
+    if (uid !== null) {
+      queryObject.uid = parseInt(uid)
     }
     
     // Add title filter (case-insensitive partial match)
@@ -678,11 +687,11 @@ ticketsV2.getOwned = async (req, res) => {
       // Use regular find query for better performance when no ownerTitle filter
       ownedTickets = await Models.Ticket.find(queryObject)
         .populate('owner assignee subscribers comments.owner notes.owner history.owner', 'username fullname email role image title')
-        .populate('assignee', 'username fullname email role image title')
-        .populate('type tags status group')
-        .sort({ uid: -1 })
-        .skip(page * limit)
-        .limit(limit)
+      .populate('assignee', 'username fullname email role image title')
+      .populate('type tags status group')
+      .sort({ uid: -1 })
+      .skip(page * limit)
+      .limit(limit)
     }
 
     // Calculate total count based on whether ownerTitle filter is used
@@ -777,7 +786,8 @@ ticketsV2.getOwned = async (req, res) => {
         group: group,
         isEscalated: isEscalated,
         isResolved: isResolved,
-        ownerTitle: ownerTitle
+        ownerTitle: ownerTitle,
+        uid: uid
       }
     })
   } catch (err) {
@@ -800,6 +810,7 @@ ticketsV2.getAssigned = async (req, res) => {
   let isEscalated = null
   let isResolved = null
   let ownerTitle = null
+  let uid = null
 
   try {
     // Parse pagination parameters
@@ -828,6 +839,9 @@ ticketsV2.getAssigned = async (req, res) => {
     if (query.ownerTitle !== undefined && query.ownerTitle !== '') {
       ownerTitle = query.ownerTitle.trim()
     }
+    if (query.uid !== undefined && query.uid !== '') {
+      uid = query.uid
+    }
     
     // Validate pagination parameters
     if (limit < 1 || limit > 100) limit = 50
@@ -842,6 +856,11 @@ ticketsV2.getAssigned = async (req, res) => {
     const queryObject = {
       assignee: req.user._id,
       deleted: false
+    }
+    
+    // Add UID filter
+    if (uid !== null) {
+      queryObject.uid = parseInt(uid)
     }
     
     // Add title filter (case-insensitive partial match)
@@ -992,11 +1011,11 @@ ticketsV2.getAssigned = async (req, res) => {
     } else {
       assignedTickets = await Models.Ticket.find(queryObject)
         .populate('owner assignee subscribers comments.owner notes.owner history.owner', 'username fullname email role image title')
-        .populate('assignee', 'username fullname email role image title')
-        .populate('type tags status group')
-        .sort({ uid: -1 })
-        .skip(page * limit)
-        .limit(limit)
+      .populate('assignee', 'username fullname email role image title')
+      .populate('type tags status group')
+      .sort({ uid: -1 })
+      .skip(page * limit)
+      .limit(limit)
     }
 
     // Calculate total count based on whether ownerTitle filter is used
@@ -1090,7 +1109,330 @@ ticketsV2.getAssigned = async (req, res) => {
         group: group,
         isEscalated: isEscalated,
         isResolved: isResolved,
-        ownerTitle: ownerTitle
+        ownerTitle: ownerTitle,
+        uid: uid
+      }
+    })
+  } catch (err) {
+    logger.warn(err)
+    return apiUtils.sendApiError(res, 500, err.message)
+  }
+}
+
+// Get all tickets with filtering (non-admin users can access)
+ticketsV2.getAdminAll = async (req, res) => {
+  const query = req.query
+  let limit = 50
+  let page = 0
+
+  // Filter parameters
+  let title = null
+  let issue = null
+  let status = null
+  let group = null
+  let isEscalated = null
+  let isResolved = null
+  let ownerTitle = null
+  let uid = null
+
+  try {
+    // Parse pagination parameters
+    limit = query.limit ? parseInt(query.limit) : limit
+    page = query.page ? parseInt(query.page) : page
+    
+    // Parse filter parameters
+    if (query.title !== undefined && query.title !== '') {
+      title = query.title.trim()
+    }
+    if (query.issue !== undefined && query.issue !== '') {
+      issue = query.issue.trim()
+    }
+    if (query.status !== undefined && query.status !== '') {
+      status = query.status
+    }
+    if (query.group !== undefined && query.group !== '') {
+      group = query.group
+    }
+    if (query.isEscalated !== undefined && query.isEscalated !== '') {
+      isEscalated = query.isEscalated === 'true' || query.isEscalated === true
+    }
+    if (query.isResolved !== undefined && query.isResolved !== '') {
+      isResolved = query.isResolved === 'true' || query.isResolved === true
+    }
+    if (query.ownerTitle !== undefined && query.ownerTitle !== '') {
+      ownerTitle = query.ownerTitle.trim()
+    }
+    if (query.uid !== undefined && query.uid !== '') {
+      uid = query.uid
+    }
+    
+    // Validate pagination parameters
+    if (limit < 1 || limit > 100) limit = 50
+    if (page < 0) page = 0
+  } catch (e) {
+    logger.warn(e)
+    return apiUtils.sendApiError_InvalidPostData(res)
+  }
+
+  try {
+    // Build query object with filters - no user restrictions for admin-all
+    const queryObject = {
+      deleted: false
+    }
+    
+    // Add UID filter
+    if (uid !== null) {
+      queryObject.uid = parseInt(uid)
+    }
+    
+    // Add title filter (case-insensitive partial match)
+    if (title !== null) {
+      queryObject.subject = { $regex: title, $options: 'i' }
+    }
+    
+    // Add issue filter (case-insensitive partial match)
+    if (issue !== null) {
+      queryObject.issue = { $regex: issue, $options: 'i' }
+    }
+    
+    // Add status filter
+    if (status !== null) {
+      if (!isNaN(status)) {
+        const TicketStatus = require('../../../models/ticketStatus')
+        const statusObj = await TicketStatus.findOne({ uid: parseInt(status) })
+        if (statusObj) {
+          queryObject.status = statusObj._id
+        } else {
+          queryObject.status = 'invalid'
+        }
+      } else {
+        queryObject.status = status
+      }
+    }
+    
+    // Add group filter
+    if (group !== null) {
+      queryObject.group = group
+    }
+    
+    // Add isEscalated filter
+    if (isEscalated !== null) {
+      if (isEscalated) {
+        queryObject.isEscalated = true
+      } else {
+        queryObject.$and = queryObject.$and || []
+        queryObject.$and.push({
+          $or: [
+            { isEscalated: false },
+            { isEscalated: { $exists: false } }
+          ]
+        })
+      }
+    }
+    
+    // Add isResolved filter
+    if (isResolved !== null) {
+      const TicketStatus = require('../../../models/ticketStatus')
+      const resolvedStatuses = await TicketStatus.find({ isResolved: true })
+      const resolvedStatusIds = resolvedStatuses.map(s => s._id)
+      
+      if (isResolved) {
+        queryObject.status = { $in: resolvedStatusIds }
+      } else {
+        queryObject.status = { $nin: resolvedStatusIds }
+      }
+    }
+
+    // Handle ownerTitle filter using aggregation pipeline if needed
+    let allTickets
+    if (ownerTitle !== null) {
+      const pipeline = [
+        { $match: queryObject },
+        {
+          $lookup: {
+            from: 'accounts',
+            localField: 'owner',
+            foreignField: '_id',
+            as: 'ownerDetails'
+          }
+        },
+        {
+          $unwind: '$ownerDetails'
+        },
+        {
+          $match: {
+            'ownerDetails.title': { $regex: ownerTitle, $options: 'i' }
+          }
+        },
+        {
+          $lookup: {
+            from: 'ticketstatuses',
+            localField: 'status',
+            foreignField: '_id',
+            as: 'statusDetails'
+          }
+        },
+        {
+          $lookup: {
+            from: 'tickettypes',
+            localField: 'type',
+            foreignField: '_id',
+            as: 'typeDetails'
+          }
+        },
+        {
+          $lookup: {
+            from: 'groups',
+            localField: 'group',
+            foreignField: '_id',
+            as: 'groupDetails'
+          }
+        },
+        {
+          $lookup: {
+            from: 'priorities',
+            localField: 'priority',
+            foreignField: '_id',
+            as: 'priorityDetails'
+          }
+        },
+        {
+          $lookup: {
+            from: 'accounts',
+            localField: 'assignee',
+            foreignField: '_id',
+            as: 'assigneeDetails'
+          }
+        },
+        {
+          $addFields: {
+            status: { $arrayElemAt: ['$statusDetails', 0] },
+            type: { $arrayElemAt: ['$typeDetails', 0] },
+            group: { $arrayElemAt: ['$groupDetails', 0] },
+            priority: { $arrayElemAt: ['$priorityDetails', 0] },
+            assignee: { $arrayElemAt: ['$assigneeDetails', 0] },
+            owner: '$ownerDetails'
+          }
+        },
+        {
+          $project: {
+            ownerDetails: 0,
+            statusDetails: 0,
+            typeDetails: 0,
+            groupDetails: 0,
+            priorityDetails: 0,
+            assigneeDetails: 0
+          }
+        },
+        { $sort: { uid: -1 } },
+        { $skip: page * limit },
+        { $limit: limit }
+      ]
+      
+      allTickets = await Models.Ticket.aggregate(pipeline)
+    } else {
+      allTickets = await Models.Ticket.find(queryObject)
+        .populate('owner assignee subscribers comments.owner notes.owner history.owner', 'username fullname email role image title')
+        .populate('assignee', 'username fullname email role image title')
+        .populate('type tags status group')
+        .sort({ uid: -1 })
+        .skip(page * limit)
+        .limit(limit)
+    }
+
+    // Calculate total count based on whether ownerTitle filter is used
+    let totalCount
+    if (ownerTitle !== null) {
+      const countPipeline = [
+        { $match: queryObject },
+        {
+          $lookup: {
+            from: 'accounts',
+            localField: 'owner',
+            foreignField: '_id',
+            as: 'ownerDetails'
+          }
+        },
+        {
+          $unwind: '$ownerDetails'
+        },
+        {
+          $match: {
+            'ownerDetails.title': { $regex: ownerTitle, $options: 'i' }
+          }
+        },
+        { $count: 'total' }
+      ]
+      
+      const countResult = await Models.Ticket.aggregate(countPipeline)
+      totalCount = countResult.length > 0 ? countResult[0].total : 0
+    } else {
+      totalCount = await Models.Ticket.countDocuments(queryObject)
+    }
+
+    const totalPages = Math.ceil(totalCount / limit)
+    const hasNextPage = page < totalPages - 1
+    const hasPrevPage = page > 0
+
+    // Add overdue and escalate_to_admin fields to each ticket
+    const moment = require('moment')
+    const processedTickets = allTickets.map(ticket => {
+      const now = moment()
+      const lastUpdate = ticket.updated ? moment(ticket.updated) : moment(ticket.date)
+      const hoursSinceUpdate = now.diff(lastUpdate, 'hours')
+      
+      // Check for recent assignee activity in the last 48 hours
+      let hasRecentAssigneeActivity = false
+      if (ticket.assignee && ticket.history && ticket.history.length > 0) {
+        const recentAssigneeAction = ticket.history.find(historyItem => {
+          if (historyItem.owner && historyItem.owner.toString() === ticket.assignee._id.toString()) {
+            const actionTime = moment(historyItem.date)
+            const hoursSinceAction = now.diff(actionTime, 'hours')
+            return hoursSinceAction < 48
+          }
+          return false
+        })
+        hasRecentAssigneeActivity = !!recentAssigneeAction
+      }
+      
+      // Set overdue and escalate_to_admin based on activity
+      let overdue = false
+      let escalate_to_admin = false
+      
+      if (!hasRecentAssigneeActivity) {
+        overdue = hoursSinceUpdate >= 48
+        escalate_to_admin = hoursSinceUpdate >= 96
+      }
+      
+      return {
+        ...(ticket.toObject ? ticket.toObject() : ticket),
+        overdue,
+        escalate_to_admin
+      }
+    })
+
+    return apiUtils.sendApiSuccess(res, {
+      tickets: processedTickets,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        totalCount: totalCount,
+        limit: limit,
+        count: processedTickets.length,
+        hasNextPage: hasNextPage,
+        hasPrevPage: hasPrevPage,
+        nextPage: hasNextPage ? page + 1 : null,
+        prevPage: hasPrevPage ? page - 1 : null
+      },
+      filters: {
+        title: title,
+        issue: issue,
+        status: status,
+        group: group,
+        isEscalated: isEscalated,
+        isResolved: isResolved,
+        ownerTitle: ownerTitle,
+        uid: uid
       }
     })
   } catch (err) {

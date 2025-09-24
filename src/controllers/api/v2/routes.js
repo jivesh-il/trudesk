@@ -45,6 +45,7 @@ module.exports = function (middleware, router, controllers) {
   router.get('/api/v2/tickets', apiv2Auth, canUser('tickets:view'), apiv2.tickets.get)
   router.get('/api/v2/tickets/owned', apiv2Auth, canUser('tickets:view'), apiv2.tickets.getOwned)
   router.get('/api/v2/tickets/assigned', apiv2Auth, canUser('tickets:view'), apiv2.tickets.getAssigned)
+  router.get('/api/v2/tickets/admin-all', apiv2Auth, canUser('tickets:view'), apiv2.tickets.getAdminAll)
   router.get('/api/v2/tickets/counts', apiv2Auth, canUser('tickets:view'), apiv2.tickets.getCounts)
   router.post('/api/v2/tickets', apiv2Auth, canUser('tickets:create'), apiv2.tickets.create)
   router.post('/api/v2/tickets/transfer/:uid', apiv2Auth, isAdmin, apiv2.tickets.transferToThirdParty)
