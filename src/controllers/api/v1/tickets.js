@@ -897,7 +897,14 @@ apiTickets.single = function (req, res) {
           // Minimal response-time cleanup for comments/notes HTML wrappers
           if (ticket && Array.isArray(ticket.comments)) {
             ticket.comments = ticket.comments.map(function (c) {
-              if (c && typeof c.comment === 'string') {
+              if (c && c.comment && typeof c.comment.text === 'string') {
+                c.comment.text = c.comment.text
+                  .replace(/<br\s*\/?\>/gi, ' ')
+                  .replace(/<\/?p>/gi, '')
+                  .replace(/\n/g, '')
+                  .trim()
+              } else if (c && typeof c.comment === 'string') {
+                // Backward compatibility for legacy string comments
                 c.comment = c.comment
                   .replace(/<br\s*\/?\>/gi, ' ')
                   .replace(/<\/?p>/gi, '')
@@ -931,7 +938,14 @@ apiTickets.single = function (req, res) {
       // Minimal response-time cleanup for comments/notes HTML wrappers
       if (ticket && Array.isArray(ticket.comments)) {
         ticket.comments = ticket.comments.map(function (c) {
-          if (c && typeof c.comment === 'string') {
+          if (c && c.comment && typeof c.comment.text === 'string') {
+            c.comment.text = c.comment.text
+              .replace(/<br\s*\/?\>/gi, ' ')
+              .replace(/<\/?p>/gi, '')
+              .replace(/\n/g, '')
+              .trim()
+          } else if (c && typeof c.comment === 'string') {
+            // Backward compatibility for legacy string comments
             c.comment = c.comment
               .replace(/<br\s*\/?\>/gi, ' ')
               .replace(/<\/?p>/gi, '')
@@ -1242,6 +1256,10 @@ apiTickets.postComment = function (req, res) {
     })
 
     var sanitizedText = text ? xss(marked.parse(sanitizeHtml(text).trim())) : ''
+    // Remove outer <p> wrappers introduced by markdown for single-paragraph content
+    if (sanitizedText) {
+      sanitizedText = sanitizedText.replace(/^<p>/i, '').replace(/<\/p>\s*$/i, '')
+    }
 
     var Comment = {
       owner: owner,
