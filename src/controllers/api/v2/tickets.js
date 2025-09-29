@@ -1804,6 +1804,13 @@ ticketsV2.adminGetAll = async (req, res) => {
   let group = null
   let assignee = null
   let owner = null
+  // Align filters with other endpoints
+  let title = null
+  let issue = null
+  let isEscalated = null
+  let isResolved = null
+  let ownerTitle = null
+  let uid = null
 
   try {
     // Parse pagination parameters
@@ -1815,7 +1822,7 @@ ticketsV2.adminGetAll = async (req, res) => {
       priority = query.priority  // Keep as string for ObjectId
     }
     if (query.status !== undefined && query.status !== '') {
-      status = query.status  // Keep as string for ObjectId
+      status = query.status  // Can be numeric UID or ObjectId string
     }
     if (query.group !== undefined && query.group !== '') {
       group = query.group
@@ -1825,6 +1832,24 @@ ticketsV2.adminGetAll = async (req, res) => {
     }
     if (query.owner !== undefined && query.owner !== '') {
       owner = query.owner
+    }
+    if (query.title !== undefined && query.title !== '') {
+      title = query.title.trim()
+    }
+    if (query.issue !== undefined && query.issue !== '') {
+      issue = query.issue.trim()
+    }
+    if (query.isEscalated !== undefined && query.isEscalated !== '') {
+      isEscalated = query.isEscalated === 'true' || query.isEscalated === true
+    }
+    if (query.isResolved !== undefined && query.isResolved !== '') {
+      isResolved = query.isResolved === 'true' || query.isResolved === true
+    }
+    if (query.ownerTitle !== undefined && query.ownerTitle !== '') {
+      ownerTitle = query.ownerTitle.trim()
+    }
+    if (query.uid !== undefined && query.uid !== '') {
+      uid = query.uid
     }
 
     // Validate pagination parameters
@@ -1846,7 +1871,15 @@ ticketsV2.adminGetAll = async (req, res) => {
       queryObject.priority = priority
     }
     if (status !== null) {
-      queryObject.status = status
+      // If numeric UID provided convert to ObjectId
+      if (!isNaN(status)) {
+        const TicketStatus = require('../../../models/ticketStatus')
+        const statusObj = await TicketStatus.findOne({ uid: parseInt(status) })
+        if (statusObj) queryObject.status = statusObj._id
+        else queryObject.status = 'invalid'
+      } else {
+        queryObject.status = status
+      }
     }
     if (group !== null) {
       queryObject.group = group
@@ -1857,18 +1890,108 @@ ticketsV2.adminGetAll = async (req, res) => {
     if (owner !== null) {
       queryObject.owner = owner
     }
+    if (uid !== null) {
+      queryObject.uid = parseInt(uid)
+    }
+    if (title !== null) {
+      queryObject.subject = { $regex: title, $options: 'i' }
+    }
+    if (issue !== null) {
+      queryObject.issue = { $regex: issue, $options: 'i' }
+    }
+    if (isEscalated !== null) {
+      if (isEscalated) {
+        queryObject.isEscalated = true
+      } else {
+        queryObject.$and = queryObject.$and || []
+        queryObject.$and.push({
+          $or: [
+            { isEscalated: false },
+            { isEscalated: { $exists: false } }
+          ]
+        })
+      }
+    }
+    if (isResolved !== null) {
+      const TicketStatus = require('../../../models/ticketStatus')
+      const resolvedStatuses = await TicketStatus.find({ isResolved: true })
+      const resolvedStatusIds = resolvedStatuses.map(s => s._id)
+      if (isResolved) queryObject.status = { $in: resolvedStatusIds }
+      else queryObject.status = { $nin: resolvedStatusIds }
+    }
 
-    // Get all tickets with filters (no group restrictions for admin)
-    const tickets = await Models.Ticket.find(queryObject)
-      .populate('owner assignee subscribers comments.owner notes.owner history.owner', 'username fullname email role image title')
-      .populate('assignee', 'username fullname email role image title')
-      .populate('type tags status group priority')
-      .sort({ uid: -1 })
-      .skip(page * limit)
-      .limit(limit)
+    // ownerTitle requires joining accounts, use aggregation if provided
+    let tickets
+    if (ownerTitle !== null) {
+      const pipeline = [
+        { $match: queryObject },
+        {
+          $lookup: {
+            from: 'accounts',
+            localField: 'owner',
+            foreignField: '_id',
+            as: 'ownerDetails'
+          }
+        },
+        { $unwind: '$ownerDetails' },
+        { $match: { 'ownerDetails.title': { $regex: ownerTitle, $options: 'i' } } },
+        {
+          $lookup: { from: 'ticketstatuses', localField: 'status', foreignField: '_id', as: 'statusDetails' }
+        },
+        {
+          $lookup: { from: 'tickettypes', localField: 'type', foreignField: '_id', as: 'typeDetails' }
+        },
+        { $lookup: { from: 'groups', localField: 'group', foreignField: '_id', as: 'groupDetails' } },
+        { $lookup: { from: 'priorities', localField: 'priority', foreignField: '_id', as: 'priorityDetails' } },
+        { $lookup: { from: 'accounts', localField: 'assignee', foreignField: '_id', as: 'assigneeDetails' } },
+        {
+          $addFields: {
+            status: { $arrayElemAt: ['$statusDetails', 0] },
+            type: { $arrayElemAt: ['$typeDetails', 0] },
+            group: { $arrayElemAt: ['$groupDetails', 0] },
+            priority: { $arrayElemAt: ['$priorityDetails', 0] },
+            assignee: { $arrayElemAt: ['$assigneeDetails', 0] },
+            owner: '$ownerDetails'
+          }
+        },
+        { $project: { ownerDetails: 0, statusDetails: 0, typeDetails: 0, groupDetails: 0, priorityDetails: 0, assigneeDetails: 0 } },
+        { $sort: { uid: -1 } },
+        { $skip: page * limit },
+        { $limit: limit }
+      ]
+      tickets = await Models.Ticket.aggregate(pipeline)
+    } else {
+      tickets = await Models.Ticket.find(queryObject)
+        .populate('owner assignee subscribers comments.owner notes.owner history.owner', 'username fullname email role image title')
+        .populate('assignee', 'username fullname email role image title')
+        .populate('type tags status group priority')
+        .sort({ uid: -1 })
+        .skip(page * limit)
+        .limit(limit)
+    }
 
     // Get total count for pagination
-    const totalCount = await Models.Ticket.countDocuments(queryObject)
+    let totalCount
+    if (ownerTitle !== null) {
+      const countPipeline = [
+        { $match: queryObject },
+        {
+          $lookup: {
+            from: 'accounts',
+            localField: 'owner',
+            foreignField: '_id',
+            as: 'ownerDetails'
+          }
+        },
+        { $unwind: '$ownerDetails' },
+        { $match: { 'ownerDetails.title': { $regex: ownerTitle, $options: 'i' } } },
+        { $count: 'total' }
+      ]
+      const countResult = await Models.Ticket.aggregate(countPipeline)
+      totalCount = countResult.length > 0 ? countResult[0].total : 0
+    } else {
+      totalCount = await Models.Ticket.countDocuments(queryObject)
+    }
 
     // Calculate pagination
     const totalPages = Math.ceil(totalCount / limit)
@@ -1916,7 +2039,13 @@ ticketsV2.adminGetAll = async (req, res) => {
         status: status,
         group: group,
         assignee: assignee,
-        owner: owner
+        owner: owner,
+        title: title,
+        issue: issue,
+        isEscalated: isEscalated,
+        isResolved: isResolved,
+        ownerTitle: ownerTitle,
+        uid: uid
       },
       statistics: {
         priorityBreakdown: priorityStats,
