@@ -44,7 +44,9 @@ fi
 
 # Ensure CSS files are writable for SASS compilation
 echo "Setting CSS file permissions..."
-chmod 664 /usr/src/trudesk/public/css/*.css 2>/dev/null || true
+ls -la /usr/src/trudesk/public/css/ 2>/dev/null || echo "CSS directory not found"
+chmod 666 /usr/src/trudesk/public/css/*.css 2>/dev/null || true
+ls -la /usr/src/trudesk/public/css/ 2>/dev/null || echo "CSS directory not found after chmod"
 
 if [ ! -f /usr/src/trudesk/public/uploads/users/defaultProfile.jpg ]; then
     echo "Copying defaultProfile.jpg"
