@@ -36,4 +36,6 @@ if [ ! -f /usr/src/trudesk/public/uploads/users/defaultProfile.jpg ]; then
     cp /usr/src/trudesk/public/img/defaultProfile.jpg /usr/src/trudesk/public/uploads/users/defaultProfile.jpg
 fi
 
-node /usr/src/trudesk/runner.js
+# Start Trudesk directly with Node.js (recommended for containers)
+echo "Starting Trudesk with Node.js..."
+node /usr/src/trudesk/app.js

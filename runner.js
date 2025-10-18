@@ -31,6 +31,9 @@
     fs.writeFileSync(moduleConfPath, '{}', { mode: 0o644 })
   }
 
+  // Set PM2 to no-daemon mode via environment variable
+  process.env.PM2_DISABLE_DAEMON = 'true'
+  
   // Connect to PM2 in no-daemon mode to avoid permission issues
   pm2.connect({
     daemon: false,
@@ -49,7 +52,10 @@
         error: path.join(__dirname, '/logs/output.log'),
         mergeLogs: true,
         instances: 1,
-        exec_mode: 'fork'
+        exec_mode: 'fork',
+        kill_timeout: 1000,
+        listen_timeout: 1000,
+        restart_delay: 1000
       },
       function (err) {
         if (err) {
@@ -61,6 +67,12 @@
         
         // Keep the process alive - don't disconnect in no-daemon mode
         process.on('SIGINT', function() {
+          pm2.killDaemon(function() {
+            process.exit(0)
+          })
+        })
+        
+        process.on('SIGTERM', function() {
           pm2.killDaemon(function() {
             process.exit(0)
           })
