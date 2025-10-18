@@ -1,10 +1,12 @@
 #!/bin/bash
 
-# Ensure PM2 home directory exists with proper permissions
+# Ensure PM2 home directory and all subdirectories exist with proper permissions
 if [ ! -d /usr/src/trudesk/.pm2 ]; then
-    echo "Creating PM2 home directory..."
-    mkdir -p /usr/src/trudesk/.pm2
-    chmod 755 /usr/src/trudesk/.pm2
+    echo "Creating PM2 home directory and subdirectories..."
+    mkdir -p /usr/src/trudesk/.pm2/logs
+    mkdir -p /usr/src/trudesk/.pm2/pids
+    mkdir -p /usr/src/trudesk/.pm2/modules
+    chmod -R 755 /usr/src/trudesk/.pm2
 fi
 
 # Ensure logs directory exists with proper permissions

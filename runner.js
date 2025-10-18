@@ -10,11 +10,20 @@
     process.env.PM2_HOME = path.join(__dirname, '.pm2')
   }
 
-  // Ensure PM2 home directory exists and is writable
+  // Ensure PM2 home directory and all subdirectories exist and are writable
   var pm2Home = process.env.PM2_HOME
   if (!fs.existsSync(pm2Home)) {
     fs.mkdirSync(pm2Home, { recursive: true, mode: 0o755 })
   }
+  
+  // Create PM2 subdirectories that it needs
+  var pm2Subdirs = ['logs', 'pids', 'modules']
+  pm2Subdirs.forEach(function(subdir) {
+    var subdirPath = path.join(pm2Home, subdir)
+    if (!fs.existsSync(subdirPath)) {
+      fs.mkdirSync(subdirPath, { recursive: true, mode: 0o755 })
+    }
+  })
 
   // Connect to PM2 in no-daemon mode to avoid permission issues
   pm2.connect({
