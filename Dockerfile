@@ -30,6 +30,8 @@ RUN addgroup -g 1001 -S trudesk && \
 # Create PM2 home directory and logs directory with proper permissions
 RUN mkdir -p /usr/src/trudesk/.pm2 && \
     mkdir -p /usr/src/trudesk/logs && \
+    chmod 755 /usr/src/trudesk/.pm2 && \
+    chmod 755 /usr/src/trudesk/logs && \
     chown -R trudesk:trudesk /usr/src/trudesk
 
 COPY --from=builder /usr/src/trudesk .

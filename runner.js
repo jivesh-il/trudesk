@@ -3,14 +3,28 @@
 
   var pm2 = require('pm2')
   var path = require('path')
+  var fs = require('fs')
 
   // Set PM2_HOME to a writable directory if not already set
   if (!process.env.PM2_HOME) {
     process.env.PM2_HOME = path.join(__dirname, '.pm2')
   }
 
-  pm2.connect(true, function (err) {
-    if (err) throw err
+  // Ensure PM2 home directory exists and is writable
+  var pm2Home = process.env.PM2_HOME
+  if (!fs.existsSync(pm2Home)) {
+    fs.mkdirSync(pm2Home, { recursive: true, mode: 0o755 })
+  }
+
+  // Connect to PM2 in no-daemon mode to avoid permission issues
+  pm2.connect({
+    daemon: false,
+    pm2_home: pm2Home
+  }, function (err) {
+    if (err) {
+      console.error('PM2 connection error:', err)
+      throw err
+    }
 
     pm2.start(
       {
@@ -18,15 +32,24 @@
         script: path.join(__dirname, '/app.js'),
         output: path.join(__dirname, '/logs/output.log'),
         error: path.join(__dirname, '/logs/output.log'),
-        mergeLogs: true
+        mergeLogs: true,
+        instances: 1,
+        exec_mode: 'fork'
       },
       function (err) {
         if (err) {
-          console.log(err)
+          console.error('PM2 start error:', err)
           throw err
         }
 
-        pm2.disconnect()
+        console.log('Trudesk started successfully with PM2')
+        
+        // Keep the process alive - don't disconnect in no-daemon mode
+        process.on('SIGINT', function() {
+          pm2.killDaemon(function() {
+            process.exit(0)
+          })
+        })
       }
     )
   })
