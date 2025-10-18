@@ -40,8 +40,12 @@ RUN mkdir -p /usr/src/trudesk/.pm2/logs && \
 
 COPY --from=builder /usr/src/trudesk .
 
-# Set ownership of copied files
-RUN chown -R trudesk:trudesk /usr/src/trudesk
+# Ensure public directory and subdirectories are writable for runtime CSS compilation
+RUN mkdir -p /usr/src/trudesk/public/css && \
+    mkdir -p /usr/src/trudesk/public/js && \
+    mkdir -p /usr/src/trudesk/public/uploads && \
+    chmod -R 755 /usr/src/trudesk/public && \
+    chown -R trudesk:trudesk /usr/src/trudesk
 
 # Switch to non-root user
 USER trudesk

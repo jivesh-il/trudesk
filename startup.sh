@@ -26,13 +26,24 @@ if [ ! -d /usr/src/trudesk/logs ]; then
     chmod 755 /usr/src/trudesk/logs
 fi
 
+# Ensure public directories exist and are writable
+if [ ! -d /usr/src/trudesk/public/css ]; then
+    echo "Creating CSS directory..."
+    mkdir -p /usr/src/trudesk/public/css
+fi
+
+if [ ! -d /usr/src/trudesk/public/js ]; then
+    echo "Creating JS directory..."
+    mkdir -p /usr/src/trudesk/public/js
+fi
+
 if [ ! -d /usr/src/trudesk/public/uploads/users ]; then
-    echo "Creating Directory..."
+    echo "Creating uploads directory..."
     mkdir -p /usr/src/trudesk/public/uploads/users
 fi
 
 if [ ! -f /usr/src/trudesk/public/uploads/users/defaultProfile.jpg ]; then
-    echo "Coping defaultProfile.jpg"
+    echo "Copying defaultProfile.jpg"
     cp /usr/src/trudesk/public/img/defaultProfile.jpg /usr/src/trudesk/public/uploads/users/defaultProfile.jpg
 fi
 
