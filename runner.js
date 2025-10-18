@@ -25,6 +25,12 @@
     }
   })
 
+  // Create PM2 configuration file if it doesn't exist
+  var moduleConfPath = path.join(pm2Home, 'module_conf.json')
+  if (!fs.existsSync(moduleConfPath)) {
+    fs.writeFileSync(moduleConfPath, '{}', { mode: 0o644 })
+  }
+
   // Connect to PM2 in no-daemon mode to avoid permission issues
   pm2.connect({
     daemon: false,

@@ -9,6 +9,16 @@ if [ ! -d /usr/src/trudesk/.pm2 ]; then
     chmod -R 755 /usr/src/trudesk/.pm2
 fi
 
+# Ensure PM2 directory has write permissions for file creation
+chmod 755 /usr/src/trudesk/.pm2
+
+# Create PM2 configuration files if they don't exist
+if [ ! -f /usr/src/trudesk/.pm2/module_conf.json ]; then
+    echo "Creating PM2 module configuration file..."
+    echo '{}' > /usr/src/trudesk/.pm2/module_conf.json
+    chmod 644 /usr/src/trudesk/.pm2/module_conf.json
+fi
+
 # Ensure logs directory exists with proper permissions
 if [ ! -d /usr/src/trudesk/logs ]; then
     echo "Creating logs directory..."

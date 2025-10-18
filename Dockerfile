@@ -32,7 +32,9 @@ RUN mkdir -p /usr/src/trudesk/.pm2/logs && \
     mkdir -p /usr/src/trudesk/.pm2/pids && \
     mkdir -p /usr/src/trudesk/.pm2/modules && \
     mkdir -p /usr/src/trudesk/logs && \
+    echo '{}' > /usr/src/trudesk/.pm2/module_conf.json && \
     chmod -R 755 /usr/src/trudesk/.pm2 && \
+    chmod 644 /usr/src/trudesk/.pm2/module_conf.json && \
     chmod 755 /usr/src/trudesk/logs && \
     chown -R trudesk:trudesk /usr/src/trudesk
 
