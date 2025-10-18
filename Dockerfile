@@ -22,7 +22,27 @@ RUN rm -rf .yarn/cache
 FROM node:16.14-alpine
 WORKDIR /usr/src/trudesk
 RUN apk add --no-cache ca-certificates bash mongodb-tools && rm -rf /tmp/*
+
+# Create a non-root user
+RUN addgroup -g 1001 -S trudesk && \
+    adduser -S trudesk -u 1001 -G trudesk
+
+# Create PM2 home directory and logs directory with proper permissions
+RUN mkdir -p /usr/src/trudesk/.pm2 && \
+    mkdir -p /usr/src/trudesk/logs && \
+    chown -R trudesk:trudesk /usr/src/trudesk
+
 COPY --from=builder /usr/src/trudesk .
+
+# Set ownership of copied files
+RUN chown -R trudesk:trudesk /usr/src/trudesk
+
+# Switch to non-root user
+USER trudesk
+
+# Set PM2_HOME environment variable to use a writable directory
+ENV PM2_HOME=/usr/src/trudesk/.pm2
+
 #COPY --from=gcsfuse /go/bin/gcsfuse /usr/local/bin
 
 EXPOSE 8118

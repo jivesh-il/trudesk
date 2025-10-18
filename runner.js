@@ -4,6 +4,11 @@
   var pm2 = require('pm2')
   var path = require('path')
 
+  // Set PM2_HOME to a writable directory if not already set
+  if (!process.env.PM2_HOME) {
+    process.env.PM2_HOME = path.join(__dirname, '.pm2')
+  }
+
   pm2.connect(true, function (err) {
     if (err) throw err
 
