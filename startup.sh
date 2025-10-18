@@ -42,6 +42,10 @@ if [ ! -d /usr/src/trudesk/public/uploads/users ]; then
     mkdir -p /usr/src/trudesk/public/uploads/users
 fi
 
+# Ensure CSS files are writable for SASS compilation
+echo "Setting CSS file permissions..."
+chmod 664 /usr/src/trudesk/public/css/*.css 2>/dev/null || true
+
 if [ ! -f /usr/src/trudesk/public/uploads/users/defaultProfile.jpg ]; then
     echo "Copying defaultProfile.jpg"
     cp /usr/src/trudesk/public/img/defaultProfile.jpg /usr/src/trudesk/public/uploads/users/defaultProfile.jpg

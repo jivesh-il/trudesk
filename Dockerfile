@@ -45,7 +45,8 @@ RUN mkdir -p /usr/src/trudesk/public/css && \
     mkdir -p /usr/src/trudesk/public/js && \
     mkdir -p /usr/src/trudesk/public/uploads && \
     chmod -R 755 /usr/src/trudesk/public && \
-    chown -R trudesk:trudesk /usr/src/trudesk
+    chown -R trudesk:trudesk /usr/src/trudesk && \
+    chmod 664 /usr/src/trudesk/public/css/*.css 2>/dev/null || true
 
 # Switch to non-root user
 USER trudesk
